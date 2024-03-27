@@ -1,0 +1,138 @@
+--1. cleaning standardisze date format in sales 
+select saledateconvert, convert(date,saledate)
+from nashvillehousing 
+
+update nashvillehousing
+set saledate = convert(date,saledate)
+
+alter table nashvillehousing
+add saledateconvert date
+
+update nashvillehousing
+set saledateconvert = convert(date,saledate)
+
+--2.populate property address data 
+select * from nashvillehousing
+--where propertyaddress is null 
+order by ParcelID
+
+--lots of repeat parcelID and propertyaddress; self join to see if there's null data 
+select A.parcelid, a.propertyaddress, b.parcelid, b.propertyaddress, ISNULL(a.propertyaddress, b.propertyaddress)
+--in the event that the first address column (a) has null values, populate with the propertyaddress of b
+from nashvillehousing A
+join nashvillehousing B 
+on A.parcelid = B.parcelid 
+and A.[UniqueId ] <> B.[UniqueID ] --ensuring parcel id doesnt have the same row 
+where a.propertyaddress is null
+
+--update command to insert these values in 
+update a 
+set propertyaddress = ISNULL(a.propertyaddress, b.propertyaddress)
+from nashvillehousing A
+join nashvillehousing B 
+on A.parcelid = B.parcelid 
+and A.[UniqueId ] <> B.[UniqueID ] --ensuring parcel id doesnt have the same row 
+where a.propertyaddress is null
+
+--3.breaking out address into indivdual columns (address, city, state)
+select 
+substring(PropertyAddress, 1, charindex(',', PropertyAddress)-1) as Address -- -1 remove comma 
+, substring(PropertyAddress, charindex(',', PropertyAddress)+1, LEN(PropertyAddress)) as address
+from NashvilleHousing
+--adding this info to the table:
+alter table NashvilleHousing
+add PropertySpiltAddress nvarchar(255)
+
+alter table NashvilleHousing
+add PropertySpiltCity nvarchar(255)
+
+--updating rows:
+update NashvilleHousing
+set PropertySpiltAddress = substring(PropertyAddress, 1, charindex(',', PropertyAddress)-1)
+
+update NashvilleHousing
+set PropertySpiltCity = substring(PropertyAddress, charindex(',', PropertyAddress)+1, LEN(PropertyAddress))
+
+--we could also use parse for updating rows:
+select 
+parsename(replace(owneraddress, ',', '.'),3) as Address,
+parsename(replace(owneraddress, ',', '.'),2) as City,
+parsename(replace(owneraddress, ',', '.'),1) as State
+from NashvilleHousing
+--lets add this into the dataset
+alter table NashvilleHousing 
+add OwnerSplitAddress nvarchar(255)
+
+update NashvilleHousing
+set OwnerSplitAddress = parsename(replace(owneraddress, ',', '.'),3)
+
+alter table NashvilleHousing 
+add OwnerSplitCity nvarchar(255)
+
+update NashvilleHousing
+set OwnerSplitCity= parsename(replace(owneraddress, ',', '.'),2)
+
+alter table NashvilleHousing
+add OwnerSplitState nvarchar(255)
+
+update NashvilleHousing
+set OwnerSplitState= parsename(replace(owneraddress, ',', '.'),1)
+
+--4. Change Y and N to Yes and No in "Sold as Vacant" field
+--lets see what the different variants are of yes,Y,no,N
+select distinct(soldasvacant), count(soldasvacant)
+from NashvilleHousing
+group by soldasvacant
+order by 2
+
+--do case when to  make a temporary new column with the changes 
+select SoldAsVacant,
+case when soldasvacant = 'Y' then 'Yes'
+when SoldAsVacant = 'N' then 'No'
+else SoldAsVacant
+end 
+from NashvilleHousing
+
+--implement these changes 
+update NashvilleHousing
+set SoldAsVacant = 
+case when soldasvacant = 'Y' then 'Yes'
+when SoldAsVacant = 'N' then 'No'
+else SoldAsVacant
+end 
+
+--5. Remove Duplicates 
+--using CTE to find duplicates 
+with rownumCTE as(
+select *, row_number() over(
+partition by --partition by unique things in each row
+parcelID, propertyaddress, saleprice, saledate, legalreference
+order by UniqueID) as row_num
+from NashvilleHousing)
+
+DELETE from rownumCTE
+where row_num>1
+
+--6. Remove unsued columns 
+alter table nashvillehousing 
+drop column owneraddress, taxdistrict, propertyaddress
+
+alter table nashvillehousing 
+drop column saledate
+------------------------------------------------------------------------------------------------
+SQL QUESTIONS:
+--1. Calculate the average sale price for each landuse category 
+select landuse, avg(saleprice) as [Average Sale Price]
+from NashvilleHousing
+group by landuse
+order by 2
+
+--2. List the top 10 properties with the highest total value 
+select top 10 *
+from NashvilleHousing
+order by TotalValue desc
+
+--3. Find the total number of properties sold as vacant for each land use property
+select count(soldasvacant) VacantPropertyCount, LandUse from NashvilleHousing
+where SoldAsVacant='Yes'
+group by LandUse
